@@ -35,7 +35,11 @@ class TokenService {
   }
 
   async findToken(refreshToken, deviceId) {
-    return await tokenModel.findOne({ refreshToken, device: deviceId });
+    // Try to match current token first, then allow a brief grace period for previousRefreshToken
+    return await tokenModel.findOne({
+      device: deviceId,
+      $or: [{ refreshToken }, { previousRefreshToken: refreshToken }],
+    });
   }
 
   async deleteToken(refreshToken) {
@@ -46,11 +50,21 @@ class TokenService {
     const existToken = await tokenModel.findOne({ device: deviceId });
 
     if (existToken) {
+      // Keep the last token in previousRefreshToken to handle concurrent rotations
+      existToken.previousRefreshToken = existToken.refreshToken;
       existToken.refreshToken = refreshToken;
+      existToken.rotatedAt = new Date();
       return existToken.save();
     }
     const token = await tokenModel.create({ device: deviceId, refreshToken });
     return token;
+  }
+
+  // Optional cleanup helper to invalidate any previous token older than a small window
+  isPreviousTokenValid(tokenDoc, windowMs = 15000) {
+    if (!tokenDoc?.previousRefreshToken || !tokenDoc?.rotatedAt) return false;
+    const age = Date.now() - new Date(tokenDoc.rotatedAt).getTime();
+    return age <= windowMs;
   }
 
   validateRefreshToken(refreshToken) {

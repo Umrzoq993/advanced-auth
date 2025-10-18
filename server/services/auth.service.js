@@ -75,11 +75,12 @@ class AuthService {
       throw BaseError.Unauthorized();
     }
     const payload = tokenService.validateRefreshToken(refreshToken);
+    if (!payload) throw BaseError.Unauthorized();
     const tokenDb = await tokenService.findToken(
       refreshToken,
       payload.deviceId
     );
-    if (!payload || !tokenDb) throw BaseError.Unauthorized();
+    if (!tokenDb) throw BaseError.Unauthorized();
     const currentSession = await deviceModel.findOne({
       user: payload.userId,
       _id: payload.deviceId,
@@ -91,6 +92,30 @@ class AuthService {
 
     const deviceDto = new DeviceDto(currentSession);
     const userDto = new UserDto(user);
+
+    // If the provided token equals the previousRefreshToken, only allow within grace window
+    const usingPrevious =
+      tokenDb.previousRefreshToken &&
+      tokenDb.previousRefreshToken === refreshToken;
+
+    if (usingPrevious && !tokenService.isPreviousTokenValid(tokenDb)) {
+      throw BaseError.Unauthorized();
+    }
+
+    // If using previous token within grace window, avoid rotating again to prevent cookie race
+    if (usingPrevious) {
+      const { accessToken, refreshToken: newRefreshToken } =
+        tokenService.generateToken(userDto.id, deviceDto.id);
+      // Do not rotate refresh token again; use the current stored refresh token
+      return {
+        user: userDto,
+        device: deviceDto,
+        accessToken,
+        refreshToken: tokenDb.refreshToken || newRefreshToken,
+      };
+    }
+
+    // Normal path: rotate refresh token
     const tokens = tokenService.generateToken(userDto.id, deviceDto.id);
     await tokenService.saveToken(deviceDto.id, tokens.refreshToken);
     return { user: userDto, device: deviceDto, ...tokens };

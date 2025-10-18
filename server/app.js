@@ -24,7 +24,7 @@ app.use(errorMiddleware);
 
 const bootstrap = async () => {
   try {
-    const PORT = process.env.PORT | 4000;
+    const PORT = process.env.PORT || 4000;
     mongoose
       .connect(process.env.MONGO_URI, { autoCreate: true })
       .then(() => console.log("MongoDB connected"));

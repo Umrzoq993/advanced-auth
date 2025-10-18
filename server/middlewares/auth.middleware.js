@@ -19,7 +19,7 @@ module.exports = async function (req, res, next) {
 
     const user = await userModel.findById(payload.userId);
     const device = await deviceModel.findById(payload.deviceId);
-    if (!user | !device) throw BaseError.Unauthorized();
+    if (!user || !device) throw BaseError.Unauthorized();
 
     req.user = user;
     req.device = device;
